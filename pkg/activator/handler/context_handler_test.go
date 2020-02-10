@@ -82,6 +82,35 @@ func TestContextHandlerError(t *testing.T) {
 	}
 }
 
+func BenchmarkContextHandlerNoTemplate(b *testing.B) {
+	ctx, cancel, _ := rtesting.SetupFakeContextWithCancel(&testing.T{})
+	defer cancel()
+	revID := types.NamespacedName{Namespace: testNamespace, Name: testRevName}
+	revision := revision(revID.Namespace, revID.Name)
+	revisionInformer(ctx, revision)
+
+	baseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := revisionFrom(r.Context()); got != revision {
+			b.Errorf("revisionFrom() = %v, want %v", got, revision)
+		}
+
+		if got := revIDFrom(r.Context()); got != revID {
+			b.Errorf("revIDFrom() = %v, want %v", got, revID)
+		}
+	})
+
+	resp := httptest.NewRecorder()
+	handler := NewContextHandler(ctx, baseHandler)
+	b.Run(fmt.Sprint("sequential"), func(b *testing.B) {
+		req := httptest.NewRequest(http.MethodPost, "http://example.com", bytes.NewBufferString(""))
+		req.Header.Set(activator.RevisionHeaderNamespace, "foospace")
+		req.Header.Set(activator.RevisionHeaderName, "fooname")
+		for j := 0; j < b.N; j++ {
+			handler.ServeHTTP(resp, req)
+		}
+	})
+}
+
 func errMsg(msg string) string {
 	return fmt.Sprintf("Error getting active endpoint: %s\n", msg)
 }
